@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Pro Signal Receiver</title>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://s3.tradingview.com/tv.js"></script>
+
+<style>
+/* CORE RESET */
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{
+    margin:0; background:#000;
+    font-family:Segoe UI,sans-serif; color:#fff;
+    height:100vh; display:flex; flex-direction:column; overflow:hidden
+}
+
+.bg-glow{
+    position:fixed; inset:0;
+    background:radial-gradient(circle,#1a1a1a 0%,#000 90%);
+    z-index:-1
+}
+
+/* TOP BAR */
+.top-bar{
+    position:fixed; top:0; left:0; width:100%; height:60px;
+    display:flex; justify-content:space-between; align-items:center;
+    padding:0 15px; z-index:30;
+    background: linear-gradient(to bottom, #000, transparent);
+}
+.app-title { font-size: 12px; color: #666; font-weight: bold; letter-spacing: 1px; }
+.reload-btn{
+    width:35px; height:35px; border-radius:50%;
+    border:1px solid #333; background:rgba(255,255,255,.1);
+    color:#fff; font-size:18px; cursor:pointer;
+}
+
+#displayContainer{
+    flex:1; display:flex; flex-direction:column; align-items:center;
+    padding:15px; padding-top:70px; overflow-y:auto
+}
+
+/* PAIR HEADER */
+.pair-header{
+    width:100%; max-width:400px;
+    background:#0d0d0d;
+    border-left:4px solid #00ffff;
+    border-radius:4px;
+    padding:10px 15px;
+    margin-bottom:10px;
+    display: flex; justify-content: space-between; align-items: center;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+}
+.pair-info { text-align: left; }
+.pair-title{font-size:10px;color:#aaa;font-weight:bold}
+.pair-name{font-size:20px;font-weight:800; color:#fff;}
+
+/* NEW: COUNTDOWN TIMER STYLE */
+.timer-box {
+    text-align: right;
+}
+.timer-label { font-size: 9px; color: #888; font-weight: bold; }
+.timer-digit { font-family: 'Courier New', monospace; font-size: 22px; font-weight: 900; color: #00ffff; }
+
+/* CHART AREA */
+#chartWrapper{
+    width:100%; height:55vh;
+    position:relative; background:#000;
+    border:1px solid #222; border-radius:8px;
+    overflow:hidden; margin-bottom:20px
+}
+#tradingview_widget{width:100%;height:100%}
+
+/* TV Logo Dual-Link Button (Your Custom Mask) */
+.tv-logo-btn{
+    position:absolute; bottom:10px; left:10px;
+    width:40px; height:40px; z-index:50;
+}
+.tv-logo-btn a img{
+    width:100%; height:100%; border-radius:50%; cursor:pointer;
+    border: 1px solid #333;
+}
+
+/* YOUR CUSTOM SIGNAL BOX */
+.signal-box{
+    padding:30px;
+    border:1px solid #333;
+    border-radius:1px; /* As you requested */
+    background:#0f0f0f;
+    width:100%; max-width:420px;
+    text-align:center;
+    margin-bottom:20px;
+    box-shadow: 0 0 30px rgba(0,0,0,0.5);
+    transition: 0.3s;
+}
+h1{margin:0;font-size:45px;font-weight:900; letter-spacing: -1px;}
+p{font-size:13px;color:#888; margin-top: 5px; font-weight: 500;}
+
+/* LOCK SCREEN */
+#lockScreen{
+    position:fixed; inset:0;
+    background:rgba(0,0,0,1);
+    z-index:999;
+    display:flex; /* Default Flex */
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+}
+</style>
+</head>
+
+<body>
+
+<div class="bg-glow"></div>
+
+<div class="top-bar">
+    <div class="app-title">AI SIGNAL BOT</div>
+    <button class="reload-btn" onclick="location.reload()">↻</button>
+</div>
+
+<!-- LOCK SCREEN -->
+<div id="lockScreen">
+    <h2 style="color: #fff; letter-spacing: 2px;">SYSTEM OFFLINE</h2>
+    <p style="color: #555; font-size: 12px;">Waiting for Admin...</p>
+</div>
+
+<div id="displayContainer">
+
+    <!-- HEADER WITH TIMER -->
+    <div class="pair-header">
+        <div class="pair-info">
+            <div class="pair-title">ACTIVE MARKET</div>
+            <div class="pair-name" id="activePairName">CONNECTING...</div>
+        </div>
+        <!-- Countdown Timer -->
+        <div class="timer-box">
+            <div class="timer-label">NEXT CANDLE</div>
+            <div class="timer-digit" id="candleTimer">00:00</div>
+        </div>
+    </div>
+
+    <!-- CHART -->
+    <div id="chartWrapper">
+        <div id="tradingview_widget"></div>
+
+        <!-- Your Custom Mask Button -->
+        <div class="tv-logo-btn">
+            <!-- Link 1: WhatsApp -->
+            <a href="https://wa.me/qr/W7WTXESIOF2NP1" target="_blank" style="position:absolute; inset:0; display:block; z-index:2;"></a>
+            <!-- Link 2: Logo Image -->
+            <a href="https://ibb.co.com/d0X43Z7H" target="_blank" style="position:absolute; inset:0; z-index:1;">
+                <img src="https://i.ibb.co/d0X43Z7H/logo.png" alt="Logo">
+            </a>
+        </div>
+    </div>
+
+    <!-- SIGNAL BOX -->
+    <div class="signal-box" id="sigBox">
+        <h1 id="mainSig">WAITING...</h1>
+        <p id="subSig">AI SYSTEM READY</p>
+    </div>
+
+</div>
+
+<script>
+    // --- 1. COUNTDOWN TIMER LOGIC ---
+    function updateTimer() {
+        const now = new Date();
+        const seconds = 60 - now.getSeconds();
+        
+        // Format: 00:XX
+        // If seconds is 60, show 00
+        const secDisplay = seconds === 60 ? 0 : seconds;
+        const formattedSec = secDisplay < 10 ? "0" + secDisplay : secDisplay;
+        
+        const timerText = document.getElementById('candleTimer');
+        timerText.innerText = "00:" + formattedSec;
+
+        // Color Logic (Red in last 10s)
+        if(seconds <= 10) {
+            timerText.style.color = "#ff0000";
+        } else {
+            timerText.style.color = "#00ffff";
+        }
+    }
+    setInterval(updateTimer, 1000);
+    updateTimer();
+
+    // --- 2. CHART LOGIC ---
+    let currentPair = "";
+    
+    function loadChart(pair) {
+        document.getElementById('tradingview_widget').innerHTML = ""; 
+        new TradingView.widget({
+            "autosize": true,
+            "symbol": pair,
+            "interval": "1",
+            "timezone": "Etc/UTC",
+            "theme": "dark",
+            "style": "1",
+            "locale": "en",
+            "container_id": "tradingview_widget",
+            // Clean UI Features
+            "hide_top_toolbar": true,
+            "hide_side_toolbar": true,
+            "hide_legend": true,
+            "save_image": false,
+            "disabled_features": [
+                "header_widget", "left_toolbar", "control_bar", 
+                "create_volume_indicator_by_default", "volume_force_overlay",
+                "use_localstorage_for_settings"
+            ],
+            "overrides": {
+                "paneProperties.background": "#000000",
+                "paneProperties.vertGridProperties.color": "#151515",
+                "paneProperties.horzGridProperties.color": "#151515",
+                "scalesProperties.textColor": "#666",
+                "mainSeriesProperties.candleStyle.upColor": "#22A561",
+                "mainSeriesProperties.candleStyle.downColor": "#ff0000",
+                "mainSeriesProperties.candleStyle.borderUpColor": "#22A561",
+                "mainSeriesProperties.candleStyle.borderDownColor": "#ff0000",
+                "mainSeriesProperties.candleStyle.wickUpColor": "#22A561",
+                "mainSeriesProperties.candleStyle.wickDownColor": "#ff0000"
+            }
+        });
+        
+        // Update Name
+        let readableName = pair.replace("FX:", "").replace("FX_IDC:", "").replace("USD", "USD/");
+        if(readableName.includes("OTC")) {} 
+        else if(!readableName.includes("/")) { readableName = readableName.slice(0,3) + "/" + readableName.slice(3); }
+        document.getElementById('activePairName').innerText = readableName;
+    }
+
+    // --- 3. FIREBASE ---
+    const firebaseConfig = {
+        apiKey: "AIzaSyBiD1Da8wC28H_BFQTT8zR8P97R5Azs2aY",
+        authDomain: "quotex-ff237.firebaseapp.com",
+        projectId: "quotex-ff237",
+        storageBucket: "quotex-ff237.appspot.com",
+        messagingSenderId: "251645687554",
+        appId: "1:251645687554:web:68c379bdf95ae5b2ca341b",
+        databaseURL: "https://quotex-ff237-default-rtdb.firebaseio.com"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    const rtdb = firebase.database();
+
+    // User Presence
+    const myRef = rtdb.ref('online_users').push();
+    rtdb.ref('.info/connected').on('value', s => { if(s.val()) { myRef.onDisconnect().remove(); myRef.set(true); } });
+
+    // --- 4. BOT CONTROL & SIGNAL LOGIC ---
+    let isEnabled = false;
+
+    // A. Check Lock Status
+    db.collection('bot').doc('control').onSnapshot(doc => {
+        const lock = document.getElementById('lockScreen');
+        if(doc.exists && doc.data().enabled) {
+            isEnabled = true; lock.style.display = "none";
+        } else {
+            isEnabled = false; lock.style.display = "flex";
+        }
+    });
+
+    // B. Check Active Pair
+    db.collection('bot').doc('settings').onSnapshot(doc => {
+        if(doc.exists && doc.data().activePair) {
+            const p = doc.data().activePair;
+            if(p !== currentPair) { currentPair = p; loadChart(p); }
+        }
+    });
+
+    // C. Listen for Signals
+    db.collection('bot').doc('live_signal').onSnapshot(doc => {
+        if(!isEnabled || !doc.exists) return;
+        const data = doc.data();
+        // 15 সেকেন্ডের পুরনো সিগন্যাল ইগনোর করবে
+        if (data.timestamp && (Date.now() - data.timestamp < 15000)) {
+            showSignal(data);
+        }
+    });
+
+    const sigBox = document.getElementById('sigBox');
+    const mainSig = document.getElementById('mainSig');
+    const subSig = document.getElementById('subSig');
+
+    function showSignal(data) {
+        mainSig.innerText = data.signal;
+        subSig.innerText = data.desc;
+        
+        const color = data.signal === 'UP' ? '#0f0' : '#f00';
+        mainSig.style.color = color;
+        sigBox.style.borderColor = color;
+        sigBox.style.boxShadow = `0 0 30px ${color}40`; // Glow Effect
+
+        if(navigator.vibrate) navigator.vibrate([500, 200, 500]);
+        
+        // Reset after 1 minute
+        setTimeout(resetDisplay, 60000);
+    }
+
+    function resetDisplay() {
+        mainSig.innerText = "WAITING..."; 
+        mainSig.style.color = "#fff"; 
+        subSig.innerText = "Scanning Market...";
+        sigBox.style.borderColor = "#333"; 
+        sigBox.style.boxShadow = "none";
+    }
+</script>
+
+</body>
+</html>
